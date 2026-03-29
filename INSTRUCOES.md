@@ -34,12 +34,12 @@
 3. Voce vera um editor de codigo. **Apague todo o conteudo** do arquivo `App.js`
 4. Abra o arquivo do app em outra aba do navegador:
    - Acesse: **github.com/rafaalmeida/ocr-codigo**
-   - Navegue ate a pasta: **snack/App.tsx**
+   - Mude para o branch **claude/mobile-text-capture-app-THzFW**
+   - Navegue ate a pasta: **snack/App.js**
    - Toque no arquivo para abrir
    - Toque no botao **"Raw"** para ver o codigo puro
    - **Selecione tudo** (toque longo > "Selecionar Tudo") e **copie**
 5. Volte para a aba do Snack e **cole** o codigo no editor
-6. Renomeie o arquivo de `App.js` para `App.tsx` (toque no nome do arquivo)
 
 ---
 

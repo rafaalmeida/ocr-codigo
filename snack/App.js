@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, createContext, useContext, useReducer } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useReducer } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import {
   FlatList,
   ActivityIndicator,
   Vibration,
-  Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system';
@@ -22,44 +21,10 @@ import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ============================================================
-// TYPES
+// STATE
 // ============================================================
 
-interface CaptureItem {
-  id: string;
-  value: string;
-  timestamp: Date;
-}
-
-interface Pattern {
-  regex: RegExp;
-  length: number;
-  description: string;
-}
-
-interface CaptureState {
-  context: string;
-  apiKey: string;
-  pattern: Pattern | null;
-  confirmedExample: string | null;
-  captures: CaptureItem[];
-}
-
-type Action =
-  | { type: 'SET_CONTEXT'; payload: string }
-  | { type: 'SET_API_KEY'; payload: string }
-  | { type: 'SET_PATTERN'; payload: { pattern: Pattern; example: string } }
-  | { type: 'ADD_CAPTURE'; payload: CaptureItem }
-  | { type: 'REMOVE_CAPTURE'; payload: string }
-  | { type: 'RESET' };
-
-type Screen = 'home' | 'camera' | 'results';
-
-// ============================================================
-// CONTEXT / STATE
-// ============================================================
-
-const initialState: CaptureState = {
+var initialState = {
   context: '',
   apiKey: '',
   pattern: null,
@@ -67,7 +32,7 @@ const initialState: CaptureState = {
   captures: [],
 };
 
-function captureReducer(state: CaptureState, action: Action): CaptureState {
+function captureReducer(state, action) {
   switch (action.type) {
     case 'SET_CONTEXT':
       return { ...state, context: action.payload };
@@ -76,11 +41,11 @@ function captureReducer(state: CaptureState, action: Action): CaptureState {
     case 'SET_PATTERN':
       return { ...state, pattern: action.payload.pattern, confirmedExample: action.payload.example };
     case 'ADD_CAPTURE': {
-      if (state.captures.some(c => c.value === action.payload.value)) return state;
+      if (state.captures.some(function(c) { return c.value === action.payload.value; })) return state;
       return { ...state, captures: [...state.captures, action.payload] };
     }
     case 'REMOVE_CAPTURE':
-      return { ...state, captures: state.captures.filter(c => c.id !== action.payload) };
+      return { ...state, captures: state.captures.filter(function(c) { return c.id !== action.payload; }) };
     case 'RESET':
       return { ...initialState, apiKey: state.apiKey };
     default:
@@ -92,54 +57,55 @@ function captureReducer(state: CaptureState, action: Action): CaptureState {
 // OCR UTILS
 // ============================================================
 
-const VISION_API_URL = 'https://vision.googleapis.com/v1/images:annotate';
+var VISION_API_URL = 'https://vision.googleapis.com/v1/images:annotate';
 
-async function recognizeText(base64Image: string, apiKey: string): Promise<{ text: string }[]> {
-  const body = {
+async function recognizeText(base64Image, apiKey) {
+  var body = {
     requests: [{
       image: { content: base64Image },
       features: [{ type: 'TEXT_DETECTION', maxResults: 50 }],
     }],
   };
 
-  const response = await fetch(`${VISION_API_URL}?key=${apiKey}`, {
+  var response = await fetch(VISION_API_URL + '?key=' + apiKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro na API Vision: ${response.status}`);
+    var errorText = await response.text();
+    throw new Error('Erro na API Vision: ' + response.status);
   }
 
-  const data = await response.json();
-  const annotations = data.responses?.[0]?.textAnnotations;
+  var data = await response.json();
+  var annotations = data.responses && data.responses[0] && data.responses[0].textAnnotations;
   if (!annotations || annotations.length === 0) return [];
-  return annotations.slice(1).map((a: any) => ({ text: a.description.trim() }));
+  return annotations.slice(1).map(function(a) { return { text: a.description.trim() }; });
 }
 
 // ============================================================
 // PATTERN UTILS
 // ============================================================
 
-function escapeRegex(str: string): string {
+function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function inferPattern(confirmedText: string): Pattern {
-  const text = confirmedText.trim();
-  const len = text.length;
-  const hasDigits = /\d/.test(text);
-  const hasLetters = /[a-zA-Z]/.test(text);
-  const hasSpecial = /[^a-zA-Z0-9]/.test(text);
+function inferPattern(confirmedText) {
+  var text = confirmedText.trim();
+  var len = text.length;
+  var hasDigits = /\d/.test(text);
+  var hasLetters = /[a-zA-Z]/.test(text);
+  var hasSpecial = /[^a-zA-Z0-9]/.test(text);
 
-  const groups: string[] = [];
-  let currentType = '';
-  let currentCount = 0;
+  var groups = [];
+  var currentType = '';
+  var currentCount = 0;
 
-  for (const char of text) {
-    let type: string;
+  for (var ci = 0; ci < text.length; ci++) {
+    var char = text[ci];
+    var type;
     if (/\d/.test(char)) type = 'digit';
     else if (/[a-zA-Z]/.test(char)) type = 'alpha';
     else type = 'literal:' + char;
@@ -147,65 +113,66 @@ function inferPattern(confirmedText: string): Pattern {
     if (type === currentType) {
       currentCount++;
     } else {
-      if (currentType) groups.push(`${currentType}:${currentCount}`);
+      if (currentType) groups.push(currentType + ':' + currentCount);
       currentType = type;
       currentCount = 1;
     }
   }
-  if (currentType) groups.push(`${currentType}:${currentCount}`);
+  if (currentType) groups.push(currentType + ':' + currentCount);
 
-  const parts = groups.map(group => {
-    const colonIdx = group.indexOf(':');
-    const type = group.substring(0, colonIdx);
-    const count = parseInt(group.substring(colonIdx + 1), 10);
+  var parts = groups.map(function(group) {
+    var colonIdx = group.indexOf(':');
+    var type = group.substring(0, colonIdx);
+    var count = parseInt(group.substring(colonIdx + 1), 10);
 
     if (type === 'digit') {
-      return `\\d{${Math.max(1, count - 1)},${count + 1}}`;
+      return '\\d{' + Math.max(1, count - 1) + ',' + (count + 1) + '}';
     } else if (type === 'alpha') {
-      return `[a-zA-Z]{${Math.max(1, count - 1)},${count + 1}}`;
+      return '[a-zA-Z]{' + Math.max(1, count - 1) + ',' + (count + 1) + '}';
     } else {
-      const literal = type.replace('literal:', '');
+      var literal = type.replace('literal:', '');
       return escapeRegex(literal);
     }
   });
 
-  let description = '';
-  if (hasDigits && !hasLetters && !hasSpecial) description = `Numero com ${len} digitos`;
-  else if (hasDigits && !hasLetters) description = `Codigo numerico formatado (${len} chars)`;
-  else if (hasLetters && hasDigits) description = `Codigo alfanumerico (${len} chars)`;
-  else if (hasLetters) description = `Texto alfabetico (${len} chars)`;
-  else description = `Padrao com ${len} chars`;
+  var description = '';
+  if (hasDigits && !hasLetters && !hasSpecial) description = 'Numero com ' + len + ' digitos';
+  else if (hasDigits && !hasLetters) description = 'Codigo numerico formatado (' + len + ' chars)';
+  else if (hasLetters && hasDigits) description = 'Codigo alfanumerico (' + len + ' chars)';
+  else if (hasLetters) description = 'Texto alfabetico (' + len + ' chars)';
+  else description = 'Padrao com ' + len + ' chars';
 
-  return { regex: new RegExp(`^${parts.join('')}$`), length: len, description };
+  return { regex: new RegExp('^' + parts.join('') + '$'), length: len, description: description };
 }
 
-function findMatchingTexts(texts: string[], pattern: Pattern): string[] {
-  return texts.map(t => t.trim()).filter(t => t.length > 0 && pattern.regex.test(t));
+function findMatchingTexts(texts, pattern) {
+  return texts.map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0 && pattern.regex.test(t); });
 }
 
 // ============================================================
 // CSV UTILS
 // ============================================================
 
-function generateCSV(items: CaptureItem[], context: string): string {
-  const BOM = '\uFEFF';
-  const header = 'Indice,Dado Capturado,Data/Hora,Contexto';
-  const rows = items.map((item, i) => {
-    const d = new Date(item.timestamp);
-    const date = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-    const val = item.value.includes(',') ? `"${item.value}"` : item.value;
-    const ctx = context.includes(',') ? `"${context}"` : context;
-    return `${i + 1},${val},${date},${ctx}`;
+function generateCSV(items, context) {
+  var BOM = '\uFEFF';
+  var header = 'Indice,Dado Capturado,Data/Hora,Contexto';
+  var rows = items.map(function(item, i) {
+    var d = new Date(item.timestamp);
+    var date = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+    var val = item.value.includes(',') ? '"' + item.value + '"' : item.value;
+    var ctx = context.includes(',') ? '"' + context + '"' : context;
+    return (i + 1) + ',' + val + ',' + date + ',' + ctx;
   });
-  return BOM + [header, ...rows].join('\n');
+  return BOM + [header].concat(rows).join('\n');
 }
 
-async function saveAndShareCSV(items: CaptureItem[], context: string) {
-  const csv = generateCSV(items, context);
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const path = `${FileSystem.documentDirectory}captura_${ts}.csv`;
+async function saveAndShareCSV(items, context) {
+  var csv = generateCSV(items, context);
+  var ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  var path = FileSystem.documentDirectory + 'captura_' + ts + '.csv';
   await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
-  if (await Sharing.isAvailableAsync()) {
+  var isAvailable = await Sharing.isAvailableAsync();
+  if (isAvailable) {
     await Sharing.shareAsync(path, { mimeType: 'text/csv', dialogTitle: 'Compartilhar capturas', UTI: 'public.comma-separated-values-text' });
   } else {
     Alert.alert('Erro', 'Compartilhamento nao disponivel neste dispositivo.');
@@ -216,19 +183,33 @@ async function saveAndShareCSV(items: CaptureItem[], context: string) {
 // HOME SCREEN
 // ============================================================
 
-const QUICK_OPTIONS = ['Codigos', 'Telefones', 'E-mails', 'CPF/CNPJ'];
+var QUICK_OPTIONS = ['Codigos', 'Telefones', 'E-mails', 'CPF/CNPJ'];
 
-function HomeScreen({ onNavigate, dispatch }: { onNavigate: (s: Screen) => void; dispatch: React.Dispatch<Action> }) {
-  const [context, setContext] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [selectedChip, setSelectedChip] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
+function HomeScreen(props) {
+  var onNavigate = props.onNavigate;
+  var dispatch = props.dispatch;
 
-  useEffect(() => {
-    AsyncStorage.getItem('@ocr_api_key').then(key => { if (key) setApiKey(key); });
+  var contextState = useState('');
+  var context = contextState[0];
+  var setContext = contextState[1];
+
+  var apiKeyState = useState('');
+  var apiKey = apiKeyState[0];
+  var setApiKey = apiKeyState[1];
+
+  var chipState = useState('');
+  var selectedChip = chipState[0];
+  var setSelectedChip = chipState[1];
+
+  var showState = useState(false);
+  var showApiKey = showState[0];
+  var setShowApiKey = showState[1];
+
+  useEffect(function() {
+    AsyncStorage.getItem('@ocr_api_key').then(function(key) { if (key) setApiKey(key); });
   }, []);
 
-  const handleStart = async () => {
+  var handleStart = async function() {
     if (!context.trim()) { Alert.alert('Atencao', 'Descreva o que deseja capturar.'); return; }
     if (!apiKey.trim()) { Alert.alert('API Key necessaria', 'Insira sua Google Cloud Vision API Key.'); return; }
     await AsyncStorage.setItem('@ocr_api_key', apiKey.trim());
@@ -251,15 +232,17 @@ function HomeScreen({ onNavigate, dispatch }: { onNavigate: (s: Screen) => void;
           <View style={s.section}>
             <Text style={s.sectionLabel}>Sugestoes rapidas</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {QUICK_OPTIONS.map(opt => (
-                <TouchableOpacity
-                  key={opt}
-                  style={[s.chip, selectedChip === opt && s.chipSelected]}
-                  onPress={() => { setSelectedChip(opt); setContext(opt); }}
-                >
-                  <Text style={[s.chipText, selectedChip === opt && s.chipTextSelected]}>{opt}</Text>
-                </TouchableOpacity>
-              ))}
+              {QUICK_OPTIONS.map(function(opt) {
+                return (
+                  <TouchableOpacity
+                    key={opt}
+                    style={[s.chip, selectedChip === opt && s.chipSelected]}
+                    onPress={function() { setSelectedChip(opt); setContext(opt); }}
+                  >
+                    <Text style={[s.chipText, selectedChip === opt && s.chipTextSelected]}>{opt}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 
@@ -270,7 +253,7 @@ function HomeScreen({ onNavigate, dispatch }: { onNavigate: (s: Screen) => void;
               placeholder="Ex: codigos de barras em cartoes de presente"
               placeholderTextColor="#999"
               value={context}
-              onChangeText={t => { setContext(t); setSelectedChip(''); }}
+              onChangeText={function(t) { setContext(t); setSelectedChip(''); }}
               multiline
             />
           </View>
@@ -278,7 +261,7 @@ function HomeScreen({ onNavigate, dispatch }: { onNavigate: (s: Screen) => void;
           <View style={s.section}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={s.sectionLabel}>Google Cloud Vision API Key</Text>
-              <TouchableOpacity onPress={() => setShowApiKey(!showApiKey)}>
+              <TouchableOpacity onPress={function() { setShowApiKey(!showApiKey); }}>
                 <Text style={{ fontSize: 14, color: '#1a73e8', fontWeight: '600' }}>{showApiKey ? 'Ocultar' : 'Mostrar'}</Text>
               </TouchableOpacity>
             </View>
@@ -312,34 +295,49 @@ function HomeScreen({ onNavigate, dispatch }: { onNavigate: (s: Screen) => void;
 // CAMERA SCREEN
 // ============================================================
 
-type CaptureMode = 'manual' | 'confirming' | 'auto';
+function CameraScreen(props) {
+  var onNavigate = props.onNavigate;
+  var state = props.state;
+  var dispatch = props.dispatch;
 
-function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen) => void; state: CaptureState; dispatch: React.Dispatch<Action> }) {
-  const cameraRef = useRef<CameraView>(null);
-  const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isProcessingRef = useRef(false);
+  var cameraRef = useRef(null);
+  var autoTimerRef = useRef(null);
+  var isProcessingRef = useRef(false);
 
-  const [permission, requestPermission] = useCameraPermissions();
-  const [mode, setMode] = useState<CaptureMode>('manual');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [detectedTexts, setDetectedTexts] = useState<string[]>([]);
-  const [showModal, setShowModal] = useState(false);
+  var permResult = useCameraPermissions();
+  var permission = permResult[0];
+  var requestPermission = permResult[1];
 
-  useEffect(() => {
-    return () => { if (autoTimerRef.current) clearInterval(autoTimerRef.current); };
+  var modeState = useState('manual');
+  var mode = modeState[0];
+  var setMode = modeState[1];
+
+  var procState = useState(false);
+  var isProcessing = procState[0];
+  var setIsProcessing = procState[1];
+
+  var textsState = useState([]);
+  var detectedTexts = textsState[0];
+  var setDetectedTexts = textsState[1];
+
+  var modalState = useState(false);
+  var showModal = modalState[0];
+  var setShowModal = modalState[1];
+
+  useEffect(function() {
+    return function() { if (autoTimerRef.current) clearInterval(autoTimerRef.current); };
   }, []);
 
-  const captureAndProcess = useCallback(async (): Promise<string[]> => {
+  var captureAndProcess = useCallback(async function() {
     if (!cameraRef.current || isProcessingRef.current) return [];
     isProcessingRef.current = true;
     setIsProcessing(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6, skipProcessing: true });
-      if (!photo?.base64) throw new Error('Falha ao capturar foto');
-      const blocks = await recognizeText(photo.base64, state.apiKey);
-      return blocks.map(b => b.text).filter(t => t.length > 0);
-    } catch (error: any) {
-      if (!isProcessingRef.current) Alert.alert('Erro no OCR', error.message || 'Erro desconhecido');
+      var photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6, skipProcessing: true });
+      if (!photo || !photo.base64) throw new Error('Falha ao capturar foto');
+      var blocks = await recognizeText(photo.base64, state.apiKey);
+      return blocks.map(function(b) { return b.text; }).filter(function(t) { return t.length > 0; });
+    } catch (error) {
       return [];
     } finally {
       isProcessingRef.current = false;
@@ -347,8 +345,8 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
     }
   }, [state.apiKey]);
 
-  const handleManualCapture = async () => {
-    const texts = await captureAndProcess();
+  var handleManualCapture = async function() {
+    var texts = await captureAndProcess();
     if (texts.length > 0) {
       setDetectedTexts(texts);
       setShowModal(true);
@@ -358,28 +356,27 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
     }
   };
 
-  const handleConfirm = (selectedText: string) => {
+  var handleConfirm = function(selectedText) {
     setShowModal(false);
-    const pattern = inferPattern(selectedText);
-    dispatch({ type: 'SET_PATTERN', payload: { pattern, example: selectedText } });
+    var pattern = inferPattern(selectedText);
+    dispatch({ type: 'SET_PATTERN', payload: { pattern: pattern, example: selectedText } });
     dispatch({ type: 'ADD_CAPTURE', payload: { id: Date.now().toString(), value: selectedText, timestamp: new Date() } });
     Vibration.vibrate(100);
     setMode('auto');
 
-    // Start auto capture
     if (autoTimerRef.current) clearInterval(autoTimerRef.current);
-    autoTimerRef.current = setInterval(async () => {
-      const texts = await captureAndProcess();
+    autoTimerRef.current = setInterval(async function() {
+      var texts = await captureAndProcess();
       if (texts.length === 0) return;
-      const matches = findMatchingTexts(texts, pattern);
-      for (const match of matches) {
-        dispatch({ type: 'ADD_CAPTURE', payload: { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, value: match, timestamp: new Date() } });
+      var matches = findMatchingTexts(texts, pattern);
+      for (var mi = 0; mi < matches.length; mi++) {
+        dispatch({ type: 'ADD_CAPTURE', payload: { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), value: matches[mi], timestamp: new Date() } });
         Vibration.vibrate(50);
       }
     }, 2500);
   };
 
-  const handleStop = () => {
+  var handleStop = function() {
     if (autoTimerRef.current) { clearInterval(autoTimerRef.current); autoTimerRef.current = null; }
     onNavigate('results');
   };
@@ -402,7 +399,6 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
   return (
     <View style={s.flex}>
       <CameraView ref={cameraRef} style={s.flex} facing="back">
-        {/* Overlay */}
         <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 60 }}>
             <Text style={s.overlayBadge} numberOfLines={1}>{state.context}</Text>
@@ -413,7 +409,6 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
               </View>
             )}
           </View>
-          {/* Guide corners */}
           <View style={s.guideBox}>
             <View style={[s.corner, { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 }]} />
             <View style={[s.corner, { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 }]} />
@@ -430,17 +425,17 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
         </View>
       </CameraView>
 
-      {/* Bottom controls */}
       <View style={s.bottomControls}>
-        {/* Mini list */}
         {state.captures.length > 0 && (
           <View style={s.miniList}>
-            {[...state.captures].reverse().slice(0, 5).map((item, i) => (
-              <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, gap: 8 }}>
-                <Text style={{ color: '#999', fontSize: 12, width: 24, textAlign: 'right' }}>{state.captures.length - i}</Text>
-                <Text style={{ color: '#fff', fontSize: 14, fontFamily: 'monospace', fontWeight: '600' }} numberOfLines={1}>{item.value}</Text>
-              </View>
-            ))}
+            {state.captures.slice().reverse().slice(0, 5).map(function(item, i) {
+              return (
+                <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 8, gap: 8 }}>
+                  <Text style={{ color: '#999', fontSize: 12, width: 24, textAlign: 'right' }}>{state.captures.length - i}</Text>
+                  <Text style={{ color: '#fff', fontSize: 14, fontFamily: 'monospace', fontWeight: '600' }} numberOfLines={1}>{item.value}</Text>
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -451,18 +446,17 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
             </TouchableOpacity>
           )}
           {mode === 'auto' && (
-            <>
+            <React.Fragment>
               {isProcessing && <ActivityIndicator color="#1a73e8" size="small" />}
               <TouchableOpacity style={s.stopBtn} onPress={handleStop}>
                 <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Parar Captura</Text>
               </TouchableOpacity>
-            </>
+            </React.Fragment>
           )}
           {mode === 'confirming' && isProcessing && <ActivityIndicator color="#1a73e8" size="large" />}
         </View>
       </View>
 
-      {/* Confirmation Modal */}
       <Modal visible={showModal} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <View style={s.modalContent}>
@@ -472,14 +466,16 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
               {detectedTexts.length === 0 ? (
                 <Text style={{ fontSize: 14, color: '#999', textAlign: 'center', padding: 20 }}>Nenhum texto detectado.</Text>
               ) : (
-                detectedTexts.map((text, i) => (
-                  <TouchableOpacity key={`${text}-${i}`} style={s.textItem} onPress={() => handleConfirm(text)}>
-                    <Text style={{ fontSize: 16, color: '#1a73e8', fontWeight: '600', fontFamily: 'monospace' }}>{text}</Text>
-                  </TouchableOpacity>
-                ))
+                detectedTexts.map(function(text, i) {
+                  return (
+                    <TouchableOpacity key={text + '-' + i} style={s.textItem} onPress={function() { handleConfirm(text); }}>
+                      <Text style={{ fontSize: 16, color: '#1a73e8', fontWeight: '600', fontFamily: 'monospace' }}>{text}</Text>
+                    </TouchableOpacity>
+                  );
+                })
               )}
             </ScrollView>
-            <TouchableOpacity style={s.cancelBtn} onPress={() => { setShowModal(false); setMode('manual'); }}>
+            <TouchableOpacity style={s.cancelBtn} onPress={function() { setShowModal(false); setMode('manual'); }}>
               <Text style={{ fontSize: 16, color: '#666', fontWeight: '600' }}>Cancelar e Tentar Novamente</Text>
             </TouchableOpacity>
           </View>
@@ -493,22 +489,26 @@ function CameraScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
 // RESULTS SCREEN
 // ============================================================
 
-function ResultScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen) => void; state: CaptureState; dispatch: React.Dispatch<Action> }) {
-  const formatTime = (date: Date) => {
-    const d = new Date(date);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+function ResultScreen(props) {
+  var onNavigate = props.onNavigate;
+  var state = props.state;
+  var dispatch = props.dispatch;
+
+  var formatTime = function(date) {
+    var d = new Date(date);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
   };
 
-  const handleShare = async () => {
+  var handleShare = async function() {
     if (state.captures.length === 0) { Alert.alert('Sem dados', 'Nenhum dado capturado.'); return; }
-    try { await saveAndShareCSV(state.captures, state.context); } catch (e: any) { Alert.alert('Erro', e.message); }
+    try { await saveAndShareCSV(state.captures, state.context); } catch (e) { Alert.alert('Erro', e.message); }
   };
 
   return (
     <SafeAreaView style={s.container}>
       <View style={s.resultsHeader}>
-        <TouchableOpacity onPress={() => onNavigate('camera')} style={{ paddingRight: 16 }}>
-          <Text style={{ fontSize: 18, color: '#1a73e8', fontWeight: '700' }}>← Voltar</Text>
+        <TouchableOpacity onPress={function() { onNavigate('camera'); }} style={{ paddingRight: 16 }}>
+          <Text style={{ fontSize: 18, color: '#1a73e8', fontWeight: '700' }}>{'<'} Voltar</Text>
         </TouchableOpacity>
         <Text style={{ fontSize: 22, fontWeight: '700', color: '#333' }}>Resultados</Text>
       </View>
@@ -526,22 +526,26 @@ function ResultScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
       ) : (
         <FlatList
           data={state.captures}
-          keyExtractor={item => item.id}
+          keyExtractor={function(item) { return item.id; }}
           contentContainerStyle={{ padding: 16 }}
-          renderItem={({ item, index }) => (
-            <View style={s.resultItem}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}>
-                <Text style={{ fontSize: 14, color: '#999', width: 28, textAlign: 'center', fontWeight: '600' }}>{index + 1}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 16, color: '#333', fontWeight: '600', fontFamily: 'monospace' }}>{item.value}</Text>
-                  <Text style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{formatTime(item.timestamp)}</Text>
+          renderItem={function(info) {
+            var item = info.item;
+            var index = info.index;
+            return (
+              <View style={s.resultItem}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}>
+                  <Text style={{ fontSize: 14, color: '#999', width: 28, textAlign: 'center', fontWeight: '600' }}>{index + 1}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, color: '#333', fontWeight: '600', fontFamily: 'monospace' }}>{item.value}</Text>
+                    <Text style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{formatTime(item.timestamp)}</Text>
+                  </View>
                 </View>
+                <TouchableOpacity style={s.deleteBtn} onPress={function() { dispatch({ type: 'REMOVE_CAPTURE', payload: item.id }); }}>
+                  <Text style={{ color: '#ea4335', fontSize: 14, fontWeight: '700' }}>X</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity style={s.deleteBtn} onPress={() => dispatch({ type: 'REMOVE_CAPTURE', payload: item.id })}>
-                <Text style={{ color: '#ea4335', fontSize: 14, fontWeight: '700' }}>X</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+            );
+          }}
         />
       )}
 
@@ -553,7 +557,7 @@ function ResultScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
         >
           <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Compartilhar CSV</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={s.newCaptureBtn} onPress={() => { dispatch({ type: 'RESET' }); onNavigate('home'); }}>
+        <TouchableOpacity style={s.newCaptureBtn} onPress={function() { dispatch({ type: 'RESET' }); onNavigate('home'); }}>
           <Text style={{ color: '#333', fontSize: 16, fontWeight: '600' }}>Nova Captura</Text>
         </TouchableOpacity>
       </View>
@@ -566,24 +570,28 @@ function ResultScreen({ onNavigate, state, dispatch }: { onNavigate: (s: Screen)
 // ============================================================
 
 export default function App() {
-  const [state, dispatch] = useReducer(captureReducer, initialState);
-  const [screen, setScreen] = useState<Screen>('home');
+  var stateResult = useReducer(captureReducer, initialState);
+  var state = stateResult[0];
+  var dispatch = stateResult[1];
 
-  switch (screen) {
-    case 'home':
-      return <HomeScreen onNavigate={setScreen} dispatch={dispatch} />;
-    case 'camera':
-      return <CameraScreen onNavigate={setScreen} state={state} dispatch={dispatch} />;
-    case 'results':
-      return <ResultScreen onNavigate={setScreen} state={state} dispatch={dispatch} />;
+  var screenState = useState('home');
+  var screen = screenState[0];
+  var setScreen = screenState[1];
+
+  if (screen === 'camera') {
+    return <CameraScreen onNavigate={setScreen} state={state} dispatch={dispatch} />;
   }
+  if (screen === 'results') {
+    return <ResultScreen onNavigate={setScreen} state={state} dispatch={dispatch} />;
+  }
+  return <HomeScreen onNavigate={setScreen} dispatch={dispatch} />;
 }
 
 // ============================================================
 // STYLES
 // ============================================================
 
-const s = StyleSheet.create({
+var s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   flex: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', padding: 32 },
@@ -616,7 +624,7 @@ const s = StyleSheet.create({
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, maxHeight: '70%' },
   textItem: { padding: 16, backgroundColor: '#f5f7fa', borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: '#e0e0e0' },
   cancelBtn: { marginTop: 16, padding: 16, borderRadius: 12, backgroundColor: '#f0f0f0', alignItems: 'center' },
-  resultsHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 20, gap: 12, borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  resultsHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingTop: 50, gap: 12, borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
   summary: { padding: 20, backgroundColor: '#f5f7fa', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
   resultItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9f9f9', padding: 16, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: '#eee' },
   deleteBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#fee', justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
