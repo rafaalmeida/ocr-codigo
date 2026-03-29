@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "OCR Captura",
+    "slug": "ocr-codigo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "ocr-codigo",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a73e8"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Este app precisa acessar a camera para capturar textos via OCR."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a73e8"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": ["android.permission.CAMERA"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Este app precisa acessar a camera para capturar textos via OCR."
+        }
+      ]
+    ]
+  }
+}
